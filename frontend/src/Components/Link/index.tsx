@@ -1,18 +1,25 @@
 import React, { useEffect, useContext } from "react";
+import { useNavigate } from 'react-router-dom';
 import { usePlaidLink } from "react-plaid-link";
 import Button from "plaid-threads/Button";
 
 import Context from "../../Context";
+import LoggedUserContext from '../../Context/loggedUserContext';
 import {Products} from "plaid";
 
 const Link = () => {
   const { linkToken, isPaymentInitiation, dispatch } = useContext(Context);
+  const { UserInSession, setUserInSession } = useContext(LoggedUserContext);
+
+  const navigate = useNavigate();
 
   const onSuccess = React.useCallback(
     (public_token: string) => {
+      console.log(`******* Step 4: Get back our short-lived public token: ${public_token}`);
       // If the access_token is needed, send public_token to server
       const exchangePublicTokenForAccessToken = async () => {
-        const response = await fetch("/api/set_access_token", {
+        console.log("******* Step 5: Send this token to our server to exchange it for an access token.      ", UserInSession._id);
+        const response = await fetch("/api/set_access_token/" + UserInSession._id , {
           method: "POST",
           headers: {
             "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
@@ -39,6 +46,7 @@ const Link = () => {
             isItemAccess: true,
           },
         });
+        navigate('/dashboard');
       };
 
       // 'payment_initiation' products do not require the public_token to be exchanged for an access_token.
@@ -67,6 +75,7 @@ const Link = () => {
     isOauth = true;
   }
 
+  console.log("*********Step 3: Calling usePlaidLink with a real link token");
   const { open, ready } = usePlaidLink(config);
 
   useEffect(() => {

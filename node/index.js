@@ -9,6 +9,8 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const moment = require('moment');
 const cors = require('cors');
+const urlencoded = require('body-parser/lib/types/urlencoded');
+
 
 const APP_PORT = process.env.APP_PORT || 8000;
 const PLAID_CLIENT_ID = process.env.PLAID_CLIENT_ID;
@@ -72,13 +74,22 @@ const configuration = new Configuration({
 const client = new PlaidApi(configuration);
 
 const app = express();
+
+app.use(cors());
+
 app.use(
   bodyParser.urlencoded({
-    extended: false,
+    extended: true,
   }),
+  express.urlencoded({extended: true})
 );
-app.use(bodyParser.json());
-app.use(cors());
+app.use(
+  bodyParser.json(),
+  express.json()
+);
+require('./config/mongoose.config');
+
+require('./routes/users.routes')(app);
 
 app.post('/api/info', function (request, response, next) {
   response.json({
@@ -102,6 +113,7 @@ app.post('/api/create_link_token', function (request, response, next) {
         products: PLAID_PRODUCTS,
         country_codes: PLAID_COUNTRY_CODES,
         language: 'en',
+        redirect_uri: 'http://localhost:3000/dashboard',
       };
 
       if (PLAID_REDIRECT_URI !== '') {
@@ -111,9 +123,13 @@ app.post('/api/create_link_token', function (request, response, next) {
       if (PLAID_ANDROID_PACKAGE_NAME !== '') {
         configs.android_package_name = PLAID_ANDROID_PACKAGE_NAME;
       }
+      console.log("******* Step 2: Request a Link token from the plaid service");
+      console.log(configs);
       const createTokenResponse = await client.linkTokenCreate(configs);
-      prettyPrintResponse(createTokenResponse);
+      // console.log("MAX TEST", createTokenResponse);
+      // prettyPrintResponse(createTokenResponse);
       response.json(createTokenResponse.data);
+      // response.json({"message": "test"});
     })
     .catch(next);
 });
@@ -139,6 +155,7 @@ app.post(
               country: 'GB',
             },
           });
+        console.log("MAX TEST", createTokenResponse);
         const recipientId = createRecipientResponse.data.recipient_id;
         prettyPrintResponse(createRecipientResponse);
 
@@ -186,27 +203,48 @@ app.post(
   },
 );
 
+const { Router } = require('express');
+const _Users = require('./models/users.model.js');
+
 // Exchange token flow - exchange a Link public_token for
 // an API access_token
 // https://plaid.com/docs/#exchange-token-flow
-app.post('/api/set_access_token', function (request, response, next) {
+app.post('/api/set_access_token/:id', function (request, response, next) {
   PUBLIC_TOKEN = request.body.public_token;
+  console.log("$$$$$$$$$$$$$", request.params);
   Promise.resolve()
     .then(async function () {
+      console.log(`******* Step 6a: Server exchanges public token for an access token`);
       const tokenResponse = await client.itemPublicTokenExchange({
         public_token: PUBLIC_TOKEN,
       });
       prettyPrintResponse(tokenResponse);
+
+      // TODO: Put this in a database, tie it to the authenticated user
       ACCESS_TOKEN = tokenResponse.data.access_token;
+
+      let updatedUser = null
+
+      _Users.findOne({_id: request.params.id})
+        .then(user => {
+          user.access_token = ACCESS_TOKEN;
+          console.log("Attempting to add access token to user", user);
+          user.save();
+          updatedUser = user;
+        })
+
+      // ITEM_ID is just another identifier for access token
       ITEM_ID = tokenResponse.data.item_id;
       if (PLAID_PRODUCTS.includes(Products.Transfer)) {
         TRANSFER_ID = await authorizeAndCreateTransfer(ACCESS_TOKEN);
       }
+
       response.json({
         // the 'access_token' is a private token, DO NOT pass this token to the frontend in your production environment
         access_token: ACCESS_TOKEN,
         item_id: ITEM_ID,
         error: null,
+        connectedUser: updatedUser
       });
     })
     .catch(next);

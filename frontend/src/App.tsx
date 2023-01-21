@@ -1,4 +1,5 @@
-import React, { useEffect, useContext, useCallback } from "react";
+import React, { useEffect, useContext, useCallback, useState } from "react";
+import { BrowserRouter, Routes, Route, Link, Router, useNavigate } from 'react-router-dom';
 
 import Header from "./Components/Headers";
 import Products from "./Components/ProductTypes/Products";
@@ -6,99 +7,84 @@ import Items from "./Components/ProductTypes/Items";
 import Context from "./Context";
 
 import styles from "./App.module.scss";
+import UserForm from "./Components/UserForm";
+import Login from "./Components/Login";
+import Logout from "./Components/Logout";
+import UserContext from "./Context/loggedUserContext";
+import ConnectBank from "./Components/ConnectBank";
+import Dashboard from "./Components/Dashboard";
 
 const App = () => {
+  const [sessionId, setSessionId] = useState("");
+  const [currentUser, setCurrentUser] = useState(null);
   const { linkSuccess, isItemAccess, isPaymentInitiation, dispatch } = useContext(Context);
-
-  const getInfo = useCallback(async () => {
-    const response = await fetch("/api/info", { method: "POST" });
-    if (!response.ok) {
-      dispatch({ type: "SET_STATE", state: { backend: false } });
-      return { paymentInitiation: false };
-    }
-    const data = await response.json();
-    const paymentInitiation: boolean = data.products.includes(
-      "payment_initiation"
-    );
-    dispatch({
-      type: "SET_STATE",
-      state: {
-        products: data.products,
-        isPaymentInitiation: paymentInitiation,
-      },
-    });
-    return { paymentInitiation };
-  }, [dispatch]);
-
-  const generateToken = useCallback(
-    async (isPaymentInitiation) => {
-      // Link tokens for 'payment_initiation' use a different creation flow in your backend.
-      const path = isPaymentInitiation
-        ? "/api/create_link_token_for_payment"
-        : "/api/create_link_token";
-      const response = await fetch(path, {
-        method: "POST",
-      });
-      if (!response.ok) {
-        dispatch({ type: "SET_STATE", state: { linkToken: null } });
-        return;
-      }
-      const data = await response.json();
-      if (data) {
-        if (data.error != null) {
-          dispatch({
-            type: "SET_STATE",
-            state: {
-              linkToken: null,
-              linkTokenError: data.error,
-            },
-          });
-          return;
-        }
-        dispatch({ type: "SET_STATE", state: { linkToken: data.link_token } });
-      }
-      // Save the link_token to be used later in the Oauth flow.
-      localStorage.setItem("link_token", data.link_token);
-    },
-    [dispatch]
-  );
+  const [users, setUsers] = useState([]);
 
   useEffect(() => {
     const init = async () => {
-      const { paymentInitiation } = await getInfo(); // used to determine which path to take when generating token
-      // do not generate a new token for OAuth redirect; instead
-      // setLinkToken from localStorage
-      if (window.location.href.includes("?oauth_state_id=")) {
-        dispatch({
-          type: "SET_STATE",
-          state: {
-            linkToken: localStorage.getItem("link_token"),
-          },
-        });
-        return;
-      }
-      generateToken(paymentInitiation);
+      console.log("Current user in session...     ", currentUser);
     };
     init();
-  }, [dispatch, generateToken, getInfo]);
+  })
+
+  const signInUser = (User: any) => {
+    setSessionId(User._id);
+    setCurrentUser(User);
+    localStorage.setItem("sessionId", User._id);
+    console.log("Local Storage Test^^^^^^^^^^ ", localStorage.getItem("sessionId"), User._id);
+
+    // navigate("/connect");
+
+  };
 
   return (
     <div className={styles.App}>
       <div className={styles.container}>
-        <Header />
-        {linkSuccess && (
-          <>
-            {isPaymentInitiation && (
-              <Products />
-            )}
-            {isItemAccess && (
+      <BrowserRouter>
+        <div className={styles.container}>
+          {/* <Header /> */}
+
+          {
+            
               <>
-                <Products />
-                <Items />
+                <UserContext.Provider value={{"UserInSession": currentUser, "SessionId" : sessionId, "setUserInSession" : setCurrentUser}}>
+                  <Routes>
+                    <Route path="/connect" element={ <ConnectBank /> }></Route>
+                  </Routes>
+                </UserContext.Provider>
+                <br></br>
+                <br></br>
+                <br></br>
+                <UserContext.Provider value={{"_setSessionId" : setSessionId}}>
+                  <Routes>
+                    <Route path="/dashboard" element={ <Logout /> }></Route>
+                  </Routes>
+                </UserContext.Provider>
+                <UserContext.Provider value={{ "UserInSession": currentUser, "SessionId" : sessionId, "setUserInSession" : setCurrentUser, "_setSessionId" : setSessionId }} >
+                  <Routes>
+                    <Route path="/dashboard" element={ <Dashboard /> } ></Route>
+                  </Routes>
+                </UserContext.Provider>
+              
+              
+              
+                <div>
+                  <UserContext.Provider value={{"setUserInSession" : setCurrentUser, "_setSessionId" : setSessionId}} >
+                    <Routes>
+                      <Route path="/" element={ <UserForm allUsers={users} setAllUsers={setUsers}/> }></Route>
+                    </Routes>
+                  </UserContext.Provider>
+                </div>
+                <div>
+                  <Routes>
+                    <Route path="/" element={ <Login userInSession={ signInUser } /> }></Route>
+                  </Routes>
+                </div>
               </>
-            )}
-          </>
-        )}
+          }
+          
+        </div>
+      </BrowserRouter>
       </div>
     </div>
   );
